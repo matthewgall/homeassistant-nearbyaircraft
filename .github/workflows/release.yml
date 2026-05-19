@@ -34,7 +34,7 @@ jobs:
           cd custom_components/adsb_nearby && zip -r ../../adsb_nearby.zip . -x "*/__pycache__/*" -x "*.pyc"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: adsb_nearby.zip
           generate_release_notes: true
