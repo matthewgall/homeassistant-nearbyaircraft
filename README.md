@@ -131,6 +131,22 @@ These online APIs return pre-filtered aircraft data with distance and direction 
 - **No aircraft in range**: Increase the radius or verify your Home Assistant home location is set correctly
 - **Invalid API key** (ADS-B Exchange): Verify your key is correct and your subscription is active
 
+## Publishing
+
+To pass HACS validation when publishing this repository:
+
+1. **Add GitHub topics** (required by HACS):
+   - Go to your repository on GitHub → **About** → **⚙️** (gear icon)
+   - Add these topics: `home-assistant`, `hacs`, `homeassistant-integration`, `adsb`, `aircraft`, `flight-tracking`
+
+2. **Brand icon** is included in `custom_components/adsb_nearby/brand/icon.png`
+
+3. **Tag a release** to trigger the release workflow:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
 ## License
 
 MIT
