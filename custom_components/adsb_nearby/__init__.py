@@ -5,7 +5,8 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .coordinator import ADSBDataUpdateCoordinator
@@ -31,6 +32,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Clean up stale device tracker entities after each update
+    @callback
+    def _async_remove_stale_trackers() -> None:
+        """Remove device tracker entities for aircraft no longer in range."""
+        if not coordinator.data:
+            return
+
+        current_hexes = {
+            p.get("hex", "").strip().upper()
+            for p in coordinator.data.get("aircraft", [])
+        }
+
+        registry = er.async_get(hass)
+        entities = er.async_entries_for_config_entry(registry, entry.entry_id)
+
+        removed = 0
+        for entity in entities:
+            if entity.domain != "device_tracker":
+                continue
+            prefix = f"{entry.entry_id}_tracker_"
+            if not entity.unique_id.startswith(prefix):
+                continue
+
+            hex_code = entity.unique_id[len(prefix):].upper()
+            if hex_code not in current_hexes:
+                registry.async_remove(entity.entity_id)
+                coordinator._tracker_hexes.discard(hex_code)
+                removed += 1
+
+        if removed:
+            _LOGGER.debug("Removed %d stale aircraft tracker(s)", removed)
+
+    coordinator.async_add_listener(_async_remove_stale_trackers)
 
     return True
 
