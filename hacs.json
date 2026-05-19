@@ -1,0 +1,8 @@
+{
+  "name": "ADSB Nearby Aircraft",
+  "content_in_root": false,
+  "render_readme": true,
+  "filename": "adsb_nearby.zip",
+  "zip_release": true,
+  "homeassistant": "2024.1.0"
+}

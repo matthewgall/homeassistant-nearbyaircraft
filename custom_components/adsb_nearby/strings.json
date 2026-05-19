@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ADSB Nearby Aircraft - Source",
+        "description": "Choose your aircraft data source.",
+        "data": {
+          "source_type": "Data Source (default: adsb.lol)"
+        },
+        "data_description": {
+          "source_type": "Select where to pull aircraft data from. Local sources connect to your own dump1090/tar1090 feeder. Online sources use global aggregation services."
+        }
+      },
+      "config": {
+        "title": "ADSB Nearby Aircraft Setup",
+        "description": "Configure your selected data source.",
+        "data": {
+          "host": "Host / IP Address",
+          "scheme": "Protocol",
+          "port": "Port Number",
+          "path": "Path to aircraft.json",
+          "api_key": "API Key",
+          "radius": "Search Radius",
+          "update_interval": "Update Interval (seconds)",
+          "verify_ssl": "Verify SSL Certificate",
+          "enable_routes": "Enable Flight Route Lookup"
+        },
+        "data_description": {
+          "host": "IP address or hostname of your ADSB feeder (e.g., 192.168.0.6 or adsb.example.com).",
+          "scheme": "Select HTTP or HTTPS based on your feeder's configuration.",
+          "port": "Port number your feeder listens on. Common values: 80 (HTTP), 443 (HTTPS), 8080, 8085.",
+          "path": "Path to the aircraft.json endpoint. Default is /data/aircraft.json for tar1090.",
+          "api_key": "Your ADS-B Exchange API key. Obtain one from the ADS-B Exchange Developer Hub.",
+          "radius": "Maximum distance from your Home Assistant home location to track aircraft. Units match your Home Assistant settings (miles or km).",
+          "update_interval": "How often to refresh aircraft data. Recommended: 10 seconds.",
+          "verify_ssl": "Enable SSL certificate verification for HTTPS connections. Disable for self-signed certificates.",
+          "enable_routes": "Look up origin and destination airports for each flight using a free public route database. Requires an internet connection."
+        }
+      }
+    },
+    "error": {
+      "connection_refused": "Connection refused. The host was reached but nothing is listening on that port.",
+      "timeout": "Connection timed out. Verify the host and port are correct and reachable from Home Assistant.",
+      "cannot_resolve": "Could not resolve hostname. Check for typos in the host address.",
+      "cannot_connect": "Could not connect to ADSB source. Check the host, port, and network connectivity.",
+      "ssl_error": "SSL certificate validation failed. Try disabling SSL verification or use HTTP.",
+      "invalid_host": "Connected but received an unexpected response. Ensure the path and port point to an ADSB aircraft.json endpoint.",
+      "invalid_adsb_data": "Connected successfully but the response does not contain valid aircraft data.",
+      "invalid_api_key": "Invalid API key. Verify your key and ensure your subscription is active.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This ADSB source is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ADSB Nearby Aircraft - Source",
+        "description": "Change your aircraft data source or keep the current one.",
+        "data": {
+          "source_type": "Data Source"
+        },
+        "data_description": {
+          "source_type": "Select where to pull aircraft data from."
+        }
+      },
+      "config": {
+        "title": "ADSB Nearby Aircraft Options",
+        "description": "Adjust settings for your ADSB Nearby Aircraft integration.",
+        "data": {
+          "host": "Host / IP Address",
+          "scheme": "Protocol",
+          "port": "Port Number",
+          "path": "Path to aircraft.json",
+          "api_key": "API Key",
+          "radius": "Search Radius",
+          "update_interval": "Update Interval (seconds)",
+          "verify_ssl": "Verify SSL Certificate",
+          "enable_routes": "Enable Flight Route Lookup"
+        },
+        "data_description": {
+          "host": "IP address or hostname of your ADSB feeder.",
+          "scheme": "Select HTTP or HTTPS.",
+          "port": "Port number your feeder listens on.",
+          "path": "Path to the aircraft.json endpoint.",
+          "api_key": "Your ADS-B Exchange API key.",
+          "radius": "Maximum distance from your Home Assistant home location to track aircraft. Units match your Home Assistant settings (miles or km).",
+          "update_interval": "How often to refresh aircraft data. Recommended: 10 seconds.",
+          "verify_ssl": "Enable SSL certificate verification for HTTPS connections.",
+          "enable_routes": "Look up origin and destination airports for each flight using a free public route database."
+        }
+      }
+    }
+  }
+}
