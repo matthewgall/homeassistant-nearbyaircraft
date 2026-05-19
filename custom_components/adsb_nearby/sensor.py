@@ -92,32 +92,7 @@ class ADSBClosestAircraftSensor(ADSBSensorBase):
         if not aircraft:
             return {"status": "No aircraft detected"}
 
-        return {
-            "hex": aircraft.get("hex"),
-            "tail": aircraft.get("tail"),
-            "flight": aircraft.get("flight"),
-            "distance": aircraft.get("distance_display"),
-            "distance_km": aircraft.get("distance_km"),
-            "altitude_ft": aircraft.get("altitude_ft"),
-            "speed_kts": aircraft.get("speed_kts"),
-            "heading": aircraft.get("heading"),
-            "aircraft_type": aircraft.get("aircraft_type"),
-            "description": aircraft.get("description"),
-            "aircraft_description": aircraft.get("aircraft_description"),
-            "operator": aircraft.get("operator"),
-            "operator_country": aircraft.get("operator_country"),
-            "weight_class": aircraft.get("weight_class"),
-            "origin_icao": aircraft.get("origin_icao"),
-            "origin_iata": aircraft.get("origin_iata"),
-            "destination_icao": aircraft.get("destination_icao"),
-            "destination_iata": aircraft.get("destination_iata"),
-            "route_string": aircraft.get("route_string"),
-            "squawk": aircraft.get("squawk"),
-            "emergency": aircraft.get("emergency"),
-            "latitude": aircraft.get("latitude"),
-            "longitude": aircraft.get("longitude"),
-            "vertical_rate_fpm": aircraft.get("vertical_rate_fpm"),
-        }
+        return {k: v for k, v in aircraft.items() if v is not None}
 
     def _get_closest_aircraft(self) -> dict[str, Any] | None:
         """Get the closest aircraft from coordinator data."""
@@ -205,31 +180,6 @@ class ADSBNearestAircraftSensor(ADSBSensorBase):
         attributes = {}
 
         for i, aircraft in enumerate(aircraft_list[:10], 1):
-            attributes[f"aircraft_{i}"] = {
-                "hex": aircraft.get("hex"),
-                "tail": aircraft.get("tail"),
-                "flight": aircraft.get("flight"),
-                "distance": aircraft.get("distance_display"),
-                "distance_km": aircraft.get("distance_km"),
-                "altitude_ft": aircraft.get("altitude_ft"),
-                "speed_kts": aircraft.get("speed_kts"),
-                "heading": aircraft.get("heading"),
-                "aircraft_type": aircraft.get("aircraft_type"),
-                "description": aircraft.get("description"),
-                "aircraft_description": aircraft.get("aircraft_description"),
-                "operator": aircraft.get("operator"),
-                "operator_country": aircraft.get("operator_country"),
-                "weight_class": aircraft.get("weight_class"),
-                "origin_icao": aircraft.get("origin_icao"),
-                "origin_iata": aircraft.get("origin_iata"),
-                "destination_icao": aircraft.get("destination_icao"),
-                "destination_iata": aircraft.get("destination_iata"),
-                "route_string": aircraft.get("route_string"),
-                "squawk": aircraft.get("squawk"),
-                "emergency": aircraft.get("emergency"),
-                "latitude": aircraft.get("latitude"),
-                "longitude": aircraft.get("longitude"),
-                "vertical_rate_fpm": aircraft.get("vertical_rate_fpm"),
-            }
+            attributes[f"aircraft_{i}"] = {k: v for k, v in aircraft.items() if v is not None}
 
         return attributes

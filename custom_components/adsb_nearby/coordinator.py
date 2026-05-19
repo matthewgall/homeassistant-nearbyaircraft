@@ -96,6 +96,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         # Route cache: {callsign: {"route": {...}, "expires": timestamp}}
         self._route_cache: dict[str, dict[str, Any]] = {}
 
+        # Track which hex codes already have device_tracker entities
+        self._tracker_hexes: set[str] = set()
+
         update_interval = timedelta(
             seconds=self._get_config_value(
                 CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
@@ -510,6 +513,29 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             parts.append(iata if iata else icao)
         return " - ".join(parts) if len(parts) > 1 else parts[0] if parts else "Unknown"
 
+    def get_new_device_trackers(
+        self, config_entry: ConfigEntry
+    ) -> list[Any]:
+        """Return device tracker entities for aircraft not yet tracked."""
+        from .device_tracker import ADSBAircraftDeviceTracker
+
+        if not self.data or not self.data.get("aircraft"):
+            return []
+
+        new_trackers = []
+        for plane in self.data["aircraft"]:
+            hex_code = plane.get("hex", "").strip().upper()
+            if not hex_code:
+                continue
+            if hex_code in self._tracker_hexes:
+                continue
+            self._tracker_hexes.add(hex_code)
+            new_trackers.append(
+                ADSBAircraftDeviceTracker(self, config_entry, hex_code)
+            )
+
+        return new_trackers
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch aircraft data from the configured source."""
         # Ensure metadata databases are loaded
@@ -698,29 +724,51 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         operator_info = self._lookup_operator(flight)
         type_info = self._lookup_type(aircraft_type)
 
-        return {
+        result: dict[str, Any] = {
             "hex": plane.get("hex"),
-            "tail": plane.get("r"),
-            "flight": flight or None,
-            "aircraft_type": aircraft_type,
-            "description": plane.get("desc"),
-            "operator": operator_info.get("operator") or plane.get("ownOp"),
-            "operator_country": operator_info.get("operator_country"),
-            "aircraft_description": type_info.get("aircraft_description"),
-            "weight_class": type_info.get("weight_class"),
             "latitude": plane.get("lat"),
             "longitude": plane.get("lon"),
             "distance_km": round(distance_km, 2),
             "distance_display": self.format_distance(distance_km),
-            "altitude_ft": plane.get("alt_baro"),
-            "altitude_geom": plane.get("alt_geom"),
-            "speed_kts": plane.get("gs"),
-            "heading": plane.get("track"),
-            "vertical_rate_fpm": plane.get("baro_rate"),
-            "squawk": plane.get("squawk"),
-            "emergency": plane.get("emergency", "none"),
-            "category": plane.get("category"),
-            "messages": plane.get("messages", 0),
-            "seen": plane.get("seen", 0),
-            "rssi": plane.get("rssi"),
         }
+
+        if plane.get("r"):
+            result["tail"] = plane["r"]
+        if flight:
+            result["flight"] = flight
+        if aircraft_type:
+            result["aircraft_type"] = aircraft_type
+        if plane.get("desc"):
+            result["description"] = plane["desc"]
+        if operator_info.get("operator"):
+            result["operator"] = operator_info["operator"]
+        if operator_info.get("operator_country"):
+            result["operator_country"] = operator_info["operator_country"]
+        if type_info.get("aircraft_description"):
+            result["aircraft_description"] = type_info["aircraft_description"]
+        if type_info.get("weight_class"):
+            result["weight_class"] = type_info["weight_class"]
+        if plane.get("alt_baro") is not None:
+            result["altitude_ft"] = plane["alt_baro"]
+        if plane.get("alt_geom") is not None:
+            result["altitude_geom"] = plane["alt_geom"]
+        if plane.get("gs") is not None:
+            result["speed_kts"] = plane["gs"]
+        if plane.get("track") is not None:
+            result["heading"] = plane["track"]
+        if plane.get("baro_rate") is not None:
+            result["vertical_rate_fpm"] = plane["baro_rate"]
+        if plane.get("squawk"):
+            result["squawk"] = plane["squawk"]
+        if plane.get("emergency") and plane["emergency"] != "none":
+            result["emergency"] = plane["emergency"]
+        if plane.get("category"):
+            result["category"] = plane["category"]
+        if plane.get("messages"):
+            result["messages"] = plane["messages"]
+        if plane.get("seen") is not None:
+            result["seen"] = plane["seen"]
+        if plane.get("rssi") is not None:
+            result["rssi"] = plane["rssi"]
+
+        return result
