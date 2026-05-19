@@ -433,8 +433,8 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             if cached is not None:
                 results[flight] = cached
                 continue
-            lat = plane.get("lat")
-            lon = plane.get("lon")
+            lat = plane.get("latitude")
+            lon = plane.get("longitude")
             if lat is None or lon is None:
                 continue
             callsigns_to_fetch.append(

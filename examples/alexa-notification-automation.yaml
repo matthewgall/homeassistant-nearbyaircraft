@@ -1,0 +1,37 @@
+# Example Home Assistant Automation for ADSB Nearby Aircraft
+#
+# This automation sends a notification via Alexa when the closest aircraft changes.
+# Place this in your Home Assistant automations.yaml or create via the UI.
+#
+# Requirements:
+#   - The ADSB Nearby Aircraft integration configured and working
+#   - An Alexa device set up with the notify integration (e.g., notify.bedroom_show_announce)
+#
+# How it works:
+#   - Triggers when the "hex" attribute of sensor.adsb_closest_aircraft changes
+#     (i.e., a different aircraft becomes the closest)
+#   - Sends a spoken message to the specified Alexa device
+#
+# Note: The template uses a fallback so it works both during real state changes
+#       and when testing the automation manually (where trigger.to_state is empty).
+
+alias: When there's a new aircraft overhead, let's tell Andrew!
+description: "Notify via Alexa when the closest aircraft changes"
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.adsb_closest_aircraft
+    attribute: hex
+conditions: []
+actions:
+  - alias: ... and notify using Alexa
+    action: notify.send_message
+    data:
+      message: >
+        {% set entity = trigger.to_state if trigger.to_state is defined else states.sensor.adsb_closest_aircraft %}
+        {% set flight = entity.attributes.flight | default(entity.state) | default("an aircraft") %}
+        Look up, {{ flight }} is currently above you
+    target:
+      entity_id:
+        - notify.bedroom_show_announce
+mode: single
