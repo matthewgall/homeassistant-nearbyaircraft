@@ -367,6 +367,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema_fields[
             vol.Optional(CONF_ENABLE_ROUTES, default=DEFAULT_ENABLE_ROUTES)
         ] = bool
+        schema_fields[
+            vol.Optional(CONF_MIN_ALTITUDE, default=DEFAULT_MIN_ALTITUDE)
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0, max=60000))
 
         # Build the actual voluptuous schema
         vol_schema = {}
@@ -504,6 +507,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_fields[
             vol.Optional(CONF_ENABLE_ROUTES, default=current_enable_routes)
         ] = bool
+
+        current_min_altitude = current_options.get(
+            CONF_MIN_ALTITUDE,
+            current_data.get(CONF_MIN_ALTITUDE, DEFAULT_MIN_ALTITUDE),
+        )
+        schema_fields[
+            vol.Optional(CONF_MIN_ALTITUDE, default=current_min_altitude)
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0, max=60000))
 
         vol_schema = {}
         for key, value in schema_fields.items():

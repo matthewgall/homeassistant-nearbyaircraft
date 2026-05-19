@@ -28,6 +28,7 @@ from .const import (
     CONF_VERIFY_SSL,
     CONF_API_KEY,
     CONF_ENABLE_ROUTES,
+    CONF_MIN_ALTITUDE,
     SOURCE_TYPE_LOCAL,
     SOURCE_TYPE_ADSB_LOL,
     SOURCE_TYPE_ADSBEXCHANGE,
@@ -40,6 +41,7 @@ from .const import (
     DEFAULT_VERIFY_SSL,
     DEFAULT_TIMEOUT,
     DEFAULT_ENABLE_ROUTES,
+    DEFAULT_MIN_ALTITUDE,
     MAX_RETRIES,
     RETRY_BACKOFF,
     ADSB_LOL_API_SCHEME,
@@ -134,6 +136,11 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         return self._get_config_value(CONF_ENABLE_ROUTES, DEFAULT_ENABLE_ROUTES)
 
     @property
+    def min_altitude(self) -> int:
+        """Return the configured minimum altitude in feet."""
+        return self._get_config_value(CONF_MIN_ALTITUDE, DEFAULT_MIN_ALTITUDE)
+
+    @property
     def home_location(self) -> tuple[float, float]:
         """Return the Home Assistant configured home location."""
         return (self.hass.config.latitude, self.hass.config.longitude)
@@ -152,6 +159,27 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
     def _radius_nm(self) -> float:
         """Return the configured radius in nautical miles."""
         return self._radius_km() / NM_TO_KM
+
+    def _is_above_min_altitude(self, plane: dict[str, Any]) -> bool:
+        """Check if aircraft is above the configured minimum altitude."""
+        min_alt = self.min_altitude
+        if min_alt <= 0:
+            return True
+
+        alt = plane.get("alt_baro")
+        if alt is None:
+            alt = plane.get("alt_geom")
+
+        if alt is None:
+            return True  # Keep aircraft with unknown altitude
+
+        if alt == "ground":
+            return False
+
+        try:
+            return float(alt) >= min_alt
+        except (TypeError, ValueError):
+            return True
 
     def convert_distance(self, km: float) -> float:
         """Convert km to the Home Assistant unit system."""
@@ -575,6 +603,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             if distance_km > radius_km:
                 continue
 
+            if not self._is_above_min_altitude(plane):
+                continue
+
             processed_aircraft.append(
                 self._process_aircraft(plane, distance_km)
             )
@@ -604,6 +635,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         processed_aircraft = []
 
         for plane in aircraft_list:
+            if not self._is_above_min_altitude(plane):
+                continue
+
             dst_nm = plane.get("dst")
             if dst_nm is None:
                 # Fallback to haversine if dst missing
@@ -655,6 +689,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         processed_aircraft = []
 
         for plane in aircraft_list:
+            if not self._is_above_min_altitude(plane):
+                continue
+
             dst_nm = plane.get("dst")
             if dst_nm is None:
                 lat = plane.get("lat")

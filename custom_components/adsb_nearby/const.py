@@ -13,6 +13,7 @@ CONF_UPDATE_INTERVAL = "update_interval"
 CONF_VERIFY_SSL = "verify_ssl"
 CONF_API_KEY = "api_key"
 CONF_ENABLE_ROUTES = "enable_routes"
+CONF_MIN_ALTITUDE = "min_altitude"
 
 # Source types
 SOURCE_TYPE_LOCAL = "local"
@@ -34,6 +35,7 @@ DEFAULT_UPDATE_INTERVAL = 10
 DEFAULT_VERIFY_SSL = True
 DEFAULT_TIMEOUT = 30
 DEFAULT_ENABLE_ROUTES = False
+DEFAULT_MIN_ALTITUDE = 0
 
 # Route API
 ROUTE_API_URL = "https://adsb.im/api/0/routeset"
