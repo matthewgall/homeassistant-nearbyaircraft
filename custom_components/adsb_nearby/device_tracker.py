@@ -31,12 +31,12 @@ async def async_setup_entry(
         """Add device trackers for newly seen aircraft."""
         new_trackers = coordinator.get_new_device_trackers(config_entry)
         if new_trackers:
-            async_add_entities(new_trackers)
+            async_add_entities(new_trackers, update_before_add=True)
 
     # Add initial trackers
     initial_trackers = coordinator.get_new_device_trackers(config_entry)
     if initial_trackers:
-        async_add_entities(initial_trackers)
+        async_add_entities(initial_trackers, update_before_add=True)
 
     # Listen for coordinator updates to add new trackers
     config_entry.async_on_unload(
@@ -70,40 +70,24 @@ class ADSBAircraftDeviceTracker(CoordinatorEntity, TrackerEntity):
             configuration_url=coordinator.url,
         )
 
-        # Store last known position so entity stays on map when aircraft leaves radius
-        self._last_latitude: float | None = None
-        self._last_longitude: float | None = None
-        self._last_name: str = f"Aircraft {hex_code}"
-
-    async def async_added_to_hass(self) -> None:
-        """Register entity for cleanup tracking."""
-        await super().async_added_to_hass()
-        entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
-        entry_data["device_trackers"][self.hex_code.upper()] = self
-        self.async_write_ha_state()
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister entity from cleanup tracking."""
-        entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
-        entry_data["device_trackers"].pop(self.hex_code.upper(), None)
-        await super().async_will_remove_from_hass()
+    @property
+    def entity_id(self) -> str:
+        """Return the entity ID."""
+        return f"device_tracker.adsb_aircraft_{self.hex_code.lower()}"
 
     @property
     def name(self) -> str | None:
         """Return the name of the aircraft."""
         plane = self._get_aircraft_data()
         if not plane:
-            return self._last_name
+            return f"Aircraft {self.hex_code}"
         flight = plane.get("flight")
         if flight:
-            self._last_name = f"{flight} ({self.hex_code})"
-            return self._last_name
+            return f"{flight} ({self.hex_code})"
         tail = plane.get("tail")
         if tail:
-            self._last_name = f"{tail} ({self.hex_code})"
-            return self._last_name
-        self._last_name = f"Aircraft {self.hex_code}"
-        return self._last_name
+            return f"{tail} ({self.hex_code})"
+        return f"Aircraft {self.hex_code}"
 
     @property
     def source_type(self) -> SourceType:
@@ -114,23 +98,13 @@ class ADSBAircraftDeviceTracker(CoordinatorEntity, TrackerEntity):
     def latitude(self) -> float | None:
         """Return latitude."""
         plane = self._get_aircraft_data()
-        if plane:
-            lat = plane.get("latitude")
-            if lat is not None:
-                self._last_latitude = float(lat)
-                return self._last_latitude
-        return self._last_latitude
+        return plane.get("latitude") if plane else None
 
     @property
     def longitude(self) -> float | None:
         """Return longitude."""
         plane = self._get_aircraft_data()
-        if plane:
-            lon = plane.get("longitude")
-            if lon is not None:
-                self._last_longitude = float(lon)
-                return self._last_longitude
-        return self._last_longitude
+        return plane.get("longitude") if plane else None
 
     @property
     def location_name(self) -> str | None:
@@ -139,8 +113,8 @@ class ADSBAircraftDeviceTracker(CoordinatorEntity, TrackerEntity):
 
     @property
     def available(self) -> bool:
-        """Return True (entity persists with last known position)."""
-        return True
+        """Return True if aircraft is currently tracked."""
+        return self._get_aircraft_data() is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -163,11 +137,6 @@ class ADSBAircraftDeviceTracker(CoordinatorEntity, TrackerEntity):
             if val is not None and val != "Unknown":
                 attrs[key] = val
         return attrs
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self.async_write_ha_state()
 
     def _get_aircraft_data(self) -> dict[str, Any] | None:
         """Get this aircraft from coordinator data."""

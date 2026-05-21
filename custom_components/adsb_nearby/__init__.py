@@ -29,7 +29,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
-        "device_trackers": {},
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -50,21 +49,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entities = er.async_entries_for_config_entry(registry, entry.entry_id)
 
         removed = 0
-        for entity_entry in entities:
-            if entity_entry.domain != "device_tracker":
+        for entity in entities:
+            if entity.domain != "device_tracker":
                 continue
             prefix = f"{entry.entry_id}_tracker_"
-            if not entity_entry.unique_id.startswith(prefix):
+            if not entity.unique_id.startswith(prefix):
                 continue
 
-            hex_code = entity_entry.unique_id[len(prefix):].upper()
+            hex_code = entity.unique_id[len(prefix):].upper()
             if hex_code not in current_hexes:
-                # Remove from platform if entity object exists
-                tracker = hass.data[DOMAIN][entry.entry_id]["device_trackers"].pop(hex_code, None)
-                if tracker is not None:
-                    tracker.async_remove()
-                # Remove from entity registry
-                registry.async_remove(entity_entry.entity_id)
+                registry.async_remove(entity.entity_id)
                 coordinator._tracker_hexes.discard(hex_code)
                 removed += 1
 
