@@ -52,7 +52,7 @@ class ADSBSensorBase(CoordinatorEntity, SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
             name=f"ADSB Nearby ({coordinator.url})",
-            manufacturer="ADSB Nearby",
+            manufacturer="Matthew Gall",
             model="Aircraft Tracker",
             configuration_url=coordinator.url,
         )
