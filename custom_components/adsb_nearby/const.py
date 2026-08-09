@@ -19,6 +19,7 @@ CONF_MIN_ALTITUDE = "min_altitude"
 SOURCE_TYPE_LOCAL = "local"
 SOURCE_TYPE_ADSB_LOL = "adsb_lol"
 SOURCE_TYPE_ADSB_FI = "adsb_fi"
+SOURCE_TYPE_AIRPLANES_LIVE = "airplanes_live"
 SOURCE_TYPE_ADSBEXCHANGE = "adsbexchange"
 
 # Sensor types
@@ -57,6 +58,12 @@ ADSB_FI_API_HOST = "opendata.adsb.fi"
 ADSB_FI_API_SCHEME = "https"
 ADSB_FI_API_PORT = 443
 ADSB_FI_API_PATH_TEMPLATE = "/api/v3/lat/{lat}/lon/{lon}/dist/{dist}"
+
+# airplanes.live API
+AIRPLANES_LIVE_API_HOST = "api.airplanes.live"
+AIRPLANES_LIVE_API_SCHEME = "https"
+AIRPLANES_LIVE_API_PORT = 443
+AIRPLANES_LIVE_API_PATH_TEMPLATE = "/v2/point/{lat}/{lon}/{dist}"
 
 # ADS-B Exchange API
 ADSBEXCHANGE_API_HOST = "adsbexchange.com"

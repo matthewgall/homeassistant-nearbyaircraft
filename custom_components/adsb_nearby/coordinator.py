@@ -32,6 +32,7 @@ from .const import (
     SOURCE_TYPE_LOCAL,
     SOURCE_TYPE_ADSB_LOL,
     SOURCE_TYPE_ADSB_FI,
+    SOURCE_TYPE_AIRPLANES_LIVE,
     SOURCE_TYPE_ADSBEXCHANGE,
     DEFAULT_SOURCE_TYPE,
     DEFAULT_SCHEME,
@@ -51,6 +52,9 @@ from .const import (
     ADSB_FI_API_SCHEME,
     ADSB_FI_API_HOST,
     ADSB_FI_API_PATH_TEMPLATE,
+    AIRPLANES_LIVE_API_SCHEME,
+    AIRPLANES_LIVE_API_HOST,
+    AIRPLANES_LIVE_API_PATH_TEMPLATE,
     ADSBEXCHANGE_API_SCHEME,
     ADSBEXCHANGE_API_HOST,
     ADSBEXCHANGE_API_PATH_TEMPLATE,
@@ -236,6 +240,16 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
                 dist=f"{radius_nm:.0f}",
             )
             return f"{ADSB_FI_API_SCHEME}://{ADSB_FI_API_HOST}{path}"
+
+        elif self.source_type == SOURCE_TYPE_AIRPLANES_LIVE:
+            home_lat, home_lon = self.home_location
+            radius_nm = self._radius_nm()
+            path = AIRPLANES_LIVE_API_PATH_TEMPLATE.format(
+                lat=home_lat,
+                lon=home_lon,
+                dist=f"{radius_nm:.0f}",
+            )
+            return f"{AIRPLANES_LIVE_API_SCHEME}://{AIRPLANES_LIVE_API_HOST}{path}"
 
         elif self.source_type == SOURCE_TYPE_ADSBEXCHANGE:
             home_lat, home_lon = self.home_location
@@ -589,6 +603,8 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             return await self._update_adsb_lol()
         elif self.source_type == SOURCE_TYPE_ADSB_FI:
             return await self._update_adsb_fi()
+        elif self.source_type == SOURCE_TYPE_AIRPLANES_LIVE:
+            return await self._update_airplanes_live()
         elif self.source_type == SOURCE_TYPE_ADSBEXCHANGE:
             return await self._update_adsbexchange()
         else:
@@ -730,6 +746,57 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         now = data.get("now")
         if now and now > 1e10:
             # adsb.fi returns timestamp in milliseconds
+            now = now / 1000.0
+
+        return {
+            "aircraft": processed_aircraft,
+            "aircraft_count": len(processed_aircraft),
+            "last_update": now,
+            "total_messages": data.get("total", 0),
+            "home_latitude": self.hass.config.latitude,
+            "home_longitude": self.hass.config.longitude,
+            "radius_km": self._radius_km(),
+        }
+
+    async def _update_airplanes_live(self) -> dict[str, Any]:
+        """Fetch data from airplanes.live API."""
+        data = await self._async_fetch_data(self.url)
+
+        if "ac" not in data:
+            raise UpdateFailed("Invalid ADSB data: missing ac array")
+
+        aircraft_list = data["ac"]
+        processed_aircraft = []
+
+        for plane in aircraft_list:
+            if not self._is_above_min_altitude(plane):
+                continue
+
+            dst_nm = plane.get("dst")
+            if dst_nm is None:
+                # Fallback to haversine if dst missing
+                lat = plane.get("lat")
+                lon = plane.get("lon")
+                if lat is None or lon is None:
+                    continue
+                home_lat, home_lon = self.home_location
+                distance_km = haversine_distance(
+                    home_lat, home_lon, lat, lon
+                )
+            else:
+                distance_km = dst_nm * NM_TO_KM
+
+            processed_aircraft.append(
+                self._process_aircraft(plane, distance_km)
+            )
+
+        processed_aircraft.sort(key=lambda x: x["distance_km"])
+
+        await self._enrich_routes(processed_aircraft)
+
+        now = data.get("now")
+        if now and now > 1e10:
+            # airplanes.live returns timestamp in milliseconds
             now = now / 1000.0
 
         return {
