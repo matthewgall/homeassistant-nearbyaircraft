@@ -64,7 +64,7 @@
           "source_type": "Data Source"
         },
         "data_description": {
-          "source_type": "Select where to pull aircraft data from."
+          "source_type": "Select where to pull aircraft data from. adsb.lol and adsb.fi are the easiest options (no setup required)."
         }
       },
       "config": {

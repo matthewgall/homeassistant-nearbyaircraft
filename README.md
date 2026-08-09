@@ -8,6 +8,7 @@ A Home Assistant custom integration that connects to aircraft data sources and s
 
 - **Multiple data sources**:
   - [adsb.lol](https://adsb.lol) (free, global, no API key required — **default**)
+  - [adsb.fi](https://adsb.fi) (free, global, no API key required)
   - Local [dump1090](https://github.com/flightaware/dump1090) / [tar1090](https://github.com/wiedehopf/tar1090) instances
   - [ADS-B Exchange](https://adsbexchange.com) (requires API key)
 - Configurable host, port, protocol, and path for local sources
@@ -46,6 +47,17 @@ A Home Assistant custom integration that connects to aircraft data sources and s
 | **Update Interval** | How often to refresh data (seconds) | `10` |
 
 No host, port, or API key required. The integration automatically queries the adsb.lol API using your Home Assistant home location coordinates. This is the fastest way to get started.
+
+### Source: adsb.fi
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| **Radius** | Maximum distance from your home location | `50` (miles or km based on HA settings) |
+| **Update Interval** | How often to refresh data (seconds) | `10` |
+
+No host, port, or API key required. The integration uses the [adsb.fi Open Data API](https://opendata.adsb.fi/) and your Home Assistant home location coordinates.
+
+> **Rate limits:** adsb.fi Open Data public endpoints are rate limited to **1 request per second**. The default update interval of 10 seconds keeps the integration well within this limit. Excessive invalid requests may result in a temporary IP address restriction.
 
 ### Source: Local dump1090 / tar1090
 
@@ -111,7 +123,7 @@ The integration expects data in the standard dump1090/tar1090 `aircraft.json` fo
 }
 ```
 
-### adsb.lol / ADS-B Exchange
+### adsb.lol / adsb.fi / ADS-B Exchange
 
 These online APIs return pre-filtered aircraft data with distance and direction already calculated from your home location.
 
@@ -120,6 +132,7 @@ These online APIs return pre-filtered aircraft data with distance and direction 
 - Home Assistant 2024.1.0 or newer
 - For **local**: a dump1090, tar1090, or readsb instance accessible from your Home Assistant server
 - For **adsb.lol**: no additional requirements (free, public API)
+- For **adsb.fi**: no additional requirements (free, public API; respect the 1 req/s rate limit)
 - For **ADS-B Exchange**: an active API key from ADS-B Exchange
 
 ## Troubleshooting

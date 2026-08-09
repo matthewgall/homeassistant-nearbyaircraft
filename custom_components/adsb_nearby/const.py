@@ -18,6 +18,7 @@ CONF_MIN_ALTITUDE = "min_altitude"
 # Source types
 SOURCE_TYPE_LOCAL = "local"
 SOURCE_TYPE_ADSB_LOL = "adsb_lol"
+SOURCE_TYPE_ADSB_FI = "adsb_fi"
 SOURCE_TYPE_ADSBEXCHANGE = "adsbexchange"
 
 # Sensor types
@@ -50,6 +51,12 @@ ADSB_LOL_API_HOST = "api.adsb.lol"
 ADSB_LOL_API_SCHEME = "https"
 ADSB_LOL_API_PORT = 443
 ADSB_LOL_API_PATH_TEMPLATE = "/v2/lat/{lat}/lon/{lon}/dist/{dist}"
+
+# adsb.fi Open Data API
+ADSB_FI_API_HOST = "opendata.adsb.fi"
+ADSB_FI_API_SCHEME = "https"
+ADSB_FI_API_PORT = 443
+ADSB_FI_API_PATH_TEMPLATE = "/api/v3/lat/{lat}/lon/{lon}/dist/{dist}"
 
 # ADS-B Exchange API
 ADSBEXCHANGE_API_HOST = "adsbexchange.com"
