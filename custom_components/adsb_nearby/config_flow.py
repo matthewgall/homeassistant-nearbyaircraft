@@ -28,6 +28,8 @@ from .const import (
     CONF_MIN_ALTITUDE,
     SOURCE_TYPE_LOCAL,
     SOURCE_TYPE_ADSB_LOL,
+    SOURCE_TYPE_ADSB_FI,
+    SOURCE_TYPE_AIRPLANES_LIVE,
     SOURCE_TYPE_ADSBEXCHANGE,
     DEFAULT_SOURCE_TYPE,
     DEFAULT_SCHEME,
@@ -42,6 +44,14 @@ from .const import (
     ADSB_LOL_API_HOST,
     ADSB_LOL_API_PORT,
     ADSB_LOL_API_PATH_TEMPLATE,
+    ADSB_FI_API_SCHEME,
+    ADSB_FI_API_HOST,
+    ADSB_FI_API_PORT,
+    ADSB_FI_API_PATH_TEMPLATE,
+    AIRPLANES_LIVE_API_SCHEME,
+    AIRPLANES_LIVE_API_HOST,
+    AIRPLANES_LIVE_API_PORT,
+    AIRPLANES_LIVE_API_PATH_TEMPLATE,
     ADSBEXCHANGE_API_SCHEME,
     ADSBEXCHANGE_API_HOST,
     ADSBEXCHANGE_API_PORT,
@@ -83,6 +93,8 @@ def _source_type_name(source_type: str) -> str:
     return {
         SOURCE_TYPE_LOCAL: "Local dump1090 / tar1090",
         SOURCE_TYPE_ADSB_LOL: "adsb.lol (free, global)",
+        SOURCE_TYPE_ADSB_FI: "adsb.fi (free, global)",
+        SOURCE_TYPE_AIRPLANES_LIVE: "airplanes.live (free, global)",
         SOURCE_TYPE_ADSBEXCHANGE: "ADS-B Exchange (requires API key)",
     }.get(source_type, source_type)
 
@@ -115,6 +127,39 @@ def _build_adsb_lol_url(hass: HomeAssistant, radius: int, is_metric: bool) -> st
         dist=f"{radius_nm:.0f}",
     )
     return f"{ADSB_LOL_API_SCHEME}://{ADSB_LOL_API_HOST}{path}"
+
+
+def _build_adsb_fi_url(hass: HomeAssistant, radius: int, is_metric: bool) -> str:
+    """Build the adsb.fi Open Data API URL from Home Assistant location."""
+    home_lat = hass.config.latitude
+    home_lon = hass.config.longitude
+    radius_km = radius if is_metric else radius * 1.60934
+    radius_nm = radius_km / NM_TO_KM
+
+    path = ADSB_FI_API_PATH_TEMPLATE.format(
+        lat=home_lat,
+        lon=home_lon,
+        dist=f"{radius_nm:.0f}",
+    )
+    return f"{ADSB_FI_API_SCHEME}://{ADSB_FI_API_HOST}{path}"
+
+
+def _build_airplanes_live_url(hass: HomeAssistant, radius: int, is_metric: bool) -> str:
+    """Build the airplanes.live API URL from Home Assistant location.
+
+    The API expects the radius in nautical miles.
+    """
+    home_lat = hass.config.latitude
+    home_lon = hass.config.longitude
+    radius_km = radius if is_metric else radius * 1.60934
+    radius_nm = radius_km / NM_TO_KM
+
+    path = AIRPLANES_LIVE_API_PATH_TEMPLATE.format(
+        lat=home_lat,
+        lon=home_lon,
+        dist=f"{radius_nm:.0f}",
+    )
+    return f"{AIRPLANES_LIVE_API_SCHEME}://{AIRPLANES_LIVE_API_HOST}{path}"
 
 
 def _build_adsbexchange_url(hass: HomeAssistant, radius: int, is_metric: bool) -> str:
@@ -198,6 +243,64 @@ async def _validate_adsb_lol(
         raise CannotConnect(f"Connection error: {err}") from err
 
 
+async def _validate_adsb_fi(
+    hass: HomeAssistant, radius: int, update_interval: int
+) -> dict[str, Any]:
+    """Validate adsb.fi Open Data API."""
+    is_metric = _get_length_unit(hass) == "km"
+    url = _build_adsb_fi_url(hass, radius, is_metric)
+    session = async_get_clientsession(hass, verify_ssl=True)
+
+    try:
+        async with asyncio.timeout(10):
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise InvalidHost(f"HTTP {response.status}")
+                json_data = await response.json()
+                if "ac" not in json_data:
+                    raise InvalidADSBData("Missing aircraft data in response")
+                if not isinstance(json_data["ac"], list):
+                    raise InvalidADSBData("Aircraft data is not a list")
+                return {
+                    "title": "ADSB Nearby (adsb.fi)",
+                    "aircraft_count": json_data.get("total", 0),
+                    "last_update": json_data.get("now"),
+                }
+    except asyncio.TimeoutError as err:
+        raise ConnectionTimeout(f"Timeout connecting to adsb.fi") from err
+    except aiohttp.ClientError as err:
+        raise CannotConnect(f"Connection error: {err}") from err
+
+
+async def _validate_airplanes_live(
+    hass: HomeAssistant, radius: int, update_interval: int
+) -> dict[str, Any]:
+    """Validate airplanes.live API."""
+    is_metric = _get_length_unit(hass) == "km"
+    url = _build_airplanes_live_url(hass, radius, is_metric)
+    session = async_get_clientsession(hass, verify_ssl=True)
+
+    try:
+        async with asyncio.timeout(10):
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise InvalidHost(f"HTTP {response.status}")
+                json_data = await response.json()
+                if "ac" not in json_data:
+                    raise InvalidADSBData("Missing aircraft data in response")
+                if not isinstance(json_data["ac"], list):
+                    raise InvalidADSBData("Aircraft data is not a list")
+                return {
+                    "title": "ADSB Nearby (airplanes.live)",
+                    "aircraft_count": json_data.get("total", 0),
+                    "last_update": json_data.get("now"),
+                }
+    except asyncio.TimeoutError as err:
+        raise ConnectionTimeout(f"Timeout connecting to airplanes.live") from err
+    except aiohttp.ClientError as err:
+        raise CannotConnect(f"Connection error: {err}") from err
+
+
 async def _validate_adsbexchange(
     hass: HomeAssistant,
     api_key: str,
@@ -262,6 +365,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {
                         SOURCE_TYPE_LOCAL: _source_type_name(SOURCE_TYPE_LOCAL),
                         SOURCE_TYPE_ADSB_LOL: _source_type_name(SOURCE_TYPE_ADSB_LOL),
+                        SOURCE_TYPE_ADSB_FI: _source_type_name(SOURCE_TYPE_ADSB_FI),
+                        SOURCE_TYPE_AIRPLANES_LIVE: _source_type_name(
+                            SOURCE_TYPE_AIRPLANES_LIVE
+                        ),
                         SOURCE_TYPE_ADSBEXCHANGE: _source_type_name(
                             SOURCE_TYPE_ADSBEXCHANGE
                         ),
@@ -296,6 +403,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         full_data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
                     )
                     unique_id = f"adsb_lol_{self.hass.config.latitude}_{self.hass.config.longitude}"
+                elif self._source_type == SOURCE_TYPE_ADSB_FI:
+                    info = await _validate_adsb_fi(
+                        self.hass,
+                        full_data.get(CONF_RADIUS, DEFAULT_RADIUS),
+                        full_data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+                    )
+                    unique_id = f"adsb_fi_{self.hass.config.latitude}_{self.hass.config.longitude}"
+                elif self._source_type == SOURCE_TYPE_AIRPLANES_LIVE:
+                    info = await _validate_airplanes_live(
+                        self.hass,
+                        full_data.get(CONF_RADIUS, DEFAULT_RADIUS),
+                        full_data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+                    )
+                    unique_id = f"airplanes_live_{self.hass.config.latitude}_{self.hass.config.longitude}"
                 elif self._source_type == SOURCE_TYPE_ADSBEXCHANGE:
                     info = await _validate_adsbexchange(
                         self.hass,
@@ -410,6 +531,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     {
                         SOURCE_TYPE_LOCAL: _source_type_name(SOURCE_TYPE_LOCAL),
                         SOURCE_TYPE_ADSB_LOL: _source_type_name(SOURCE_TYPE_ADSB_LOL),
+                        SOURCE_TYPE_ADSB_FI: _source_type_name(SOURCE_TYPE_ADSB_FI),
+                        SOURCE_TYPE_AIRPLANES_LIVE: _source_type_name(
+                            SOURCE_TYPE_AIRPLANES_LIVE
+                        ),
                         SOURCE_TYPE_ADSBEXCHANGE: _source_type_name(
                             SOURCE_TYPE_ADSBEXCHANGE
                         ),
