@@ -1,3 +1,6 @@
 __pycache__
 *.pyc
 adsb_nearby.zip
+.venv/
+.coverage
+uv.lock
