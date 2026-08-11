@@ -4,3 +4,4 @@ adsb_nearby.zip
 .venv/
 .coverage
 uv.lock
+.pytest_cache/
