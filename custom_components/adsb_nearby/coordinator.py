@@ -97,6 +97,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Initialize coordinator."""
         self.config_entry = config_entry
+        # Preserve the explicitly passed config_entry in case the HA
+        # DataUpdateCoordinator super().__init__ cannot determine it from
+        # context (e.g. during unit tests or unusual instantiation paths).
 
         # Aircraft metadata databases (loaded on first update)
         self._operators_db: dict[str, list[str]] | None = None
@@ -121,6 +124,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=update_interval,
         )
+
+        if self.config_entry is None:
+            self.config_entry = config_entry
 
     def _get_config_value(self, key: str, default: Any) -> Any:
         """Return a config value, preferring options over data."""
