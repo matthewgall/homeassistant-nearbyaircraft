@@ -69,11 +69,7 @@ class ADSBAircraftDeviceTracker(CoordinatorEntity, TrackerEntity):
             model="Aircraft Tracker",
             configuration_url=coordinator.url,
         )
-
-    @property
-    def entity_id(self) -> str:
-        """Return the entity ID."""
-        return f"device_tracker.adsb_aircraft_{self.hex_code.lower()}"
+        self.entity_id = f"device_tracker.adsb_aircraft_{hex_code.lower()}"
 
     @property
     def name(self) -> str | None:
