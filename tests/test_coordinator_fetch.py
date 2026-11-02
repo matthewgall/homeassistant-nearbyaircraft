@@ -106,7 +106,7 @@ async def test_lookup_routes_api_success(hass, aioclient_mock) -> None:
         coordinator = ADSBDataUpdateCoordinator(hass, entry)
 
     aioclient_mock.post(
-        "https://adsb.im/api/0/routeset",
+        "http://adsb.im/api/0/routeset",
         json=[{
             "callsign": "BA123",
             "_airports": [

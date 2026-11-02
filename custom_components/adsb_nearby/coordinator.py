@@ -64,6 +64,8 @@ from .const import (
     WEIGHT_CLASS_MAP,
     ROUTE_API_URL,
     ROUTE_CACHE_TTL,
+    ROUTE_API_403_BACKOFF,
+    DEFAULT_USER_AGENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -111,6 +113,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Track which hex codes already have device_tracker entities
         self._tracker_hexes: set[str] = set()
+
+        # Route API 403 backoff tracking
+        self._route_403_backoff_until: float = 0.0
 
         update_interval = timedelta(
             seconds=self._get_config_value(
@@ -271,12 +276,13 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
 
     @property
     def _api_headers(self) -> dict[str, str]:
-        """Return API headers for authenticated sources."""
+        """Return API headers including identification and auth when needed."""
+        headers = {"User-Agent": DEFAULT_USER_AGENT}
         if self.source_type == SOURCE_TYPE_ADSBEXCHANGE:
             api_key = self._get_config_value(CONF_API_KEY, "")
             if api_key:
-                return {"api-auth": api_key}
-        return {}
+                headers["api-auth"] = api_key
+        return headers
 
     @property
     def _verify_ssl(self) -> bool:
@@ -299,7 +305,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             self.hass, verify_ssl=self._verify_ssl
         )
         sanitized_url = self._sanitize_url(url)
-        request_headers = headers or {}
+        request_headers = {"User-Agent": DEFAULT_USER_AGENT}
+        if headers:
+            request_headers.update(headers)
 
         last_error: Exception | None = None
         retry_delay: int | None = None
@@ -394,6 +402,7 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             return
 
         session = async_get_clientsession(self.hass, verify_ssl=True)
+        db_headers = {"User-Agent": DEFAULT_USER_AGENT}
 
         async def _fetch_db(url: str, name: str) -> dict[str, Any]:
             """Fetch a single JSON database.
@@ -404,7 +413,9 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             """
             try:
                 async with asyncio.timeout(30):
-                    async with session.get(url) as response:
+                    async with session.get(
+                        url, headers=db_headers
+                    ) as response:
                         if response.status == 200:
                             text = await response.text()
                             data = json.loads(text)
@@ -486,6 +497,12 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             return {}
 
         now = asyncio.get_event_loop().time()
+        if now < self._route_403_backoff_until:
+            _LOGGER.debug(
+                "Skipping route lookup: 403 backoff until %s",
+                self._route_403_backoff_until,
+            )
+            return {}
         callsigns_to_fetch: list[dict[str, Any]] = []
         results: dict[str, dict[str, Any]] = {}
 
@@ -509,15 +526,19 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         if not callsigns_to_fetch:
             return results
 
-        session = async_get_clientsession(self.hass, verify_ssl=True)
+        session = async_get_clientsession(self.hass, verify_ssl=False)
         request_body = json.dumps({"planes": callsigns_to_fetch})
+        request_headers = {
+            "Content-Type": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
+        }
 
         try:
             async with asyncio.timeout(DEFAULT_TIMEOUT):
                 async with session.post(
                     ROUTE_API_URL,
                     data=request_body,
-                    headers={"Content-Type": "application/json"},
+                    headers=request_headers,
                 ) as response:
                     if response.status == 200:
                         text = await response.text()
@@ -547,6 +568,18 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
                                 "Unexpected route API response format: %s",
                                 type(routes).__name__,
                             )
+                    elif response.status == 403:
+                        self._route_403_backoff_until = (
+                            asyncio.get_event_loop().time() + ROUTE_API_403_BACKOFF
+                        )
+                        _LOGGER.warning(
+                            "Route API returned HTTP 403. Route lookup requires "
+                            "prior approval from dirk@adsb.im and a descriptive "
+                            "User-Agent. Backing off route lookups for %d seconds. "
+                            "Consider disabling flight route lookup in the "
+                            "integration options.",
+                            ROUTE_API_403_BACKOFF,
+                        )
                     else:
                         _LOGGER.warning(
                             "Route API returned HTTP %d", response.status

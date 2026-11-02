@@ -39,9 +39,16 @@ DEFAULT_TIMEOUT = 30
 DEFAULT_ENABLE_ROUTES = False
 DEFAULT_MIN_ALTITUDE = 0
 
+# User-Agent used for all requests so sources can contact the maintainer if needed
+DEFAULT_USER_AGENT = (
+    "home-assistant-adsb-nearby-aircraft/1.7.1 "
+    "(+https://github.com/matthewgall/homeassistant-nearbyaircraft)"
+)
+
 # Route API
-ROUTE_API_URL = "https://adsb.im/api/0/routeset"
+ROUTE_API_URL = "http://adsb.im/api/0/routeset"
 ROUTE_CACHE_TTL = 21600  # 6 hours in seconds
+ROUTE_API_403_BACKOFF = 3600  # 1 hour in seconds
 
 # Retry settings
 MAX_RETRIES = 2
