@@ -1,5 +1,8 @@
 """Tests for ADSB Nearby Aircraft constants."""
 
+import json
+from pathlib import Path
+
 from custom_components.adsb_nearby.const import (
     ADSB_FI_API_HOST,
     ADSB_FI_API_PATH_TEMPLATE,
@@ -12,6 +15,7 @@ from custom_components.adsb_nearby.const import (
     AIRPLANES_LIVE_API_PATH_TEMPLATE,
     AIRPLANES_LIVE_API_PORT,
     AIRPLANES_LIVE_API_SCHEME,
+    INTEGRATION_VERSION,
     SOURCE_TYPE_ADSBEXCHANGE,
     SOURCE_TYPE_ADSB_FI,
     SOURCE_TYPE_ADSB_LOL,
@@ -50,3 +54,16 @@ def test_adsb_lol_api_constants_unchanged() -> None:
     assert ADSB_LOL_API_SCHEME == "https"
     assert ADSB_LOL_API_HOST == "api.adsb.lol"
     assert ADSB_LOL_API_PATH_TEMPLATE == "/v2/lat/{lat}/lon/{lon}/dist/{dist}"
+
+
+def test_integration_version_matches_manifest() -> None:
+    """INTEGRATION_VERSION is loaded from manifest.json."""
+    manifest_path = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "adsb_nearby"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert INTEGRATION_VERSION == manifest["version"]
+    assert INTEGRATION_VERSION != "unknown"

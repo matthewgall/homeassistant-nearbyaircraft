@@ -1,6 +1,22 @@
 """Constants for ADSB Nearby Aircraft integration."""
 
+import json
+from pathlib import Path
+
 DOMAIN = "adsb_nearby"
+
+
+def _load_manifest_version() -> str:
+    """Read integration version from manifest.json."""
+    try:
+        manifest_path = Path(__file__).parent / "manifest.json"
+        with open(manifest_path, encoding="utf-8") as manifest_file:
+            manifest = json.load(manifest_file)
+        return manifest.get("version", "unknown")
+    except Exception:
+        return "unknown"
+
+INTEGRATION_VERSION = _load_manifest_version()
 
 # Configuration keys
 CONF_SOURCE_TYPE = "source_type"
@@ -41,7 +57,7 @@ DEFAULT_MIN_ALTITUDE = 0
 
 # User-Agent used for all requests so sources can contact the maintainer if needed
 DEFAULT_USER_AGENT = (
-    "home-assistant-adsb-nearby-aircraft/1.7.2 "
+    f"home-assistant-adsb-nearby-aircraft/{INTEGRATION_VERSION} "
     "(+https://github.com/matthewgall/homeassistant-nearbyaircraft)"
 )
 
