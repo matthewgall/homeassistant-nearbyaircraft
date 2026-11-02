@@ -135,7 +135,8 @@ async def test_update_adsbexchange_uses_api_key(mock_load_db, hass) -> None:
 
     assert result["aircraft_count"] == 1
     call_args = mock_fetch.call_args
-    assert call_args[1]["headers"] == {"api-auth": "secret123"}
+    assert call_args[1]["headers"]["api-auth"] == "secret123"
+    assert "User-Agent" in call_args[1]["headers"]
 
 
 @patch.object(ADSBDataUpdateCoordinator, "_async_load_databases", new_callable=AsyncMock)
