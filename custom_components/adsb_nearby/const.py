@@ -41,7 +41,7 @@ DEFAULT_MIN_ALTITUDE = 0
 
 # User-Agent used for all requests so sources can contact the maintainer if needed
 DEFAULT_USER_AGENT = (
-    "home-assistant-adsb-nearby-aircraft/1.7.1 "
+    "home-assistant-adsb-nearby-aircraft/1.7.2 "
     "(+https://github.com/matthewgall/homeassistant-nearbyaircraft)"
 )
 
