@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import math
+from collections import deque
 from datetime import timedelta
 from typing import Any
 
@@ -63,8 +64,15 @@ from .const import (
     TYPES_DB_URL,
     WEIGHT_CLASS_MAP,
     ROUTE_API_URL,
+    ROUTE_BULK_API_URL,
     ROUTE_CACHE_TTL,
-    ROUTE_API_403_BACKOFF,
+    ROUTE_UNKNOWN_CACHE_TTL,
+    ROUTE_MAX_CONCURRENT,
+    ROUTE_BULK_MIN_INTERVAL,
+    ROUTE_BULK_BACKOFF,
+    ROUTE_ADSBDB_LIMIT_60,
+    ROUTE_ADSBDB_LIMIT_300,
+    ROUTE_ADSBDB_BLOCKED_BACKOFF,
     DEFAULT_USER_AGENT,
 )
 
@@ -114,8 +122,10 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
         # Track which hex codes already have device_tracker entities
         self._tracker_hexes: set[str] = set()
 
-        # Route API 403 backoff tracking
-        self._route_403_backoff_until: float = 0.0
+        # Route lookup rate-limit / throttling state
+        self._route_bulk_last_call: float = 0.0
+        self._route_bulk_backoff_until: float = 0.0
+        self._route_adsbdb_timestamps: deque[float] = deque()
 
         update_interval = timedelta(
             seconds=self._get_config_value(
@@ -489,7 +499,7 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
     async def _lookup_routes(
         self, aircraft_list: list[dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        """Batch-lookup flight routes via adsb.im API.
+        """Lookup flight routes, preferring adsb.im bulk then adsbdb single.
 
         Returns a mapping of callsign -> route info.
         """
@@ -497,14 +507,8 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             return {}
 
         now = asyncio.get_event_loop().time()
-        if now < self._route_403_backoff_until:
-            _LOGGER.debug(
-                "Skipping route lookup: 403 backoff until %s",
-                self._route_403_backoff_until,
-            )
-            return {}
-        callsigns_to_fetch: list[dict[str, Any]] = []
         results: dict[str, dict[str, Any]] = {}
+        callsigns_with_pos: list[dict[str, Any]] = []
 
         for plane in aircraft_list:
             flight = plane.get("flight")
@@ -519,30 +523,69 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
             lon = plane.get("longitude")
             if lat is None or lon is None:
                 continue
-            callsigns_to_fetch.append(
+            callsigns_with_pos.append(
                 {"callsign": flight, "lat": lat, "lng": lon}
             )
 
-        if not callsigns_to_fetch:
+        if not callsigns_with_pos:
             return results
 
-        session = async_get_clientsession(self.hass, verify_ssl=False)
-        request_body = json.dumps({"planes": callsigns_to_fetch})
+        # Try bulk adsb.im lookup first when it is not throttled/backed off.
+        unresolved_callsigns = [cs["callsign"] for cs in callsigns_with_pos]
+        if (
+            now >= self._route_bulk_last_call + ROUTE_BULK_MIN_INTERVAL
+            and now >= self._route_bulk_backoff_until
+        ):
+            bulk_results = await self._lookup_bulk_routes(
+                callsigns_with_pos, now
+            )
+            self._route_bulk_last_call = now
+            for cs, route_info in bulk_results.items():
+                results[cs] = route_info
+            unresolved_callsigns = [
+                cs for cs in unresolved_callsigns if cs not in bulk_results
+            ]
+        else:
+            _LOGGER.debug(
+                "Skipping adsb.im bulk route lookup due to throttling/backoff"
+            )
+
+        # Fall back to adsbdb single-callsign lookups.
+        if unresolved_callsigns:
+            session = async_get_clientsession(self.hass, verify_ssl=True)
+            headers = {"User-Agent": DEFAULT_USER_AGENT}
+            semaphore = asyncio.Semaphore(ROUTE_MAX_CONCURRENT)
+            tasks = [
+                self._lookup_adsbdb_route(cs, session, headers, semaphore)
+                for cs in unresolved_callsigns
+            ]
+            for cs, route_info in await asyncio.gather(*tasks):
+                if route_info is not None:
+                    results[cs] = route_info
+
+        return results
+
+    async def _lookup_bulk_routes(
+        self, callsigns_with_pos: list[dict[str, Any]], now: float
+    ) -> dict[str, dict[str, Any]]:
+        """Batch-lookup routes via adsb.im routeset API."""
+        results: dict[str, dict[str, Any]] = {}
+        request_body = json.dumps({"planes": callsigns_with_pos})
         request_headers = {
             "Content-Type": "application/json",
             "User-Agent": DEFAULT_USER_AGENT,
         }
+        session = async_get_clientsession(self.hass, verify_ssl=False)
 
         try:
             async with asyncio.timeout(DEFAULT_TIMEOUT):
                 async with session.post(
-                    ROUTE_API_URL,
+                    ROUTE_BULK_API_URL,
                     data=request_body,
                     headers=request_headers,
                 ) as response:
                     if response.status == 200:
-                        text = await response.text()
-                        routes = json.loads(text)
+                        routes = await response.json()
                         if isinstance(routes, list):
                             for route in routes:
                                 if not route or not isinstance(route, dict):
@@ -556,7 +599,7 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
                                     "origin_iata": airports[0]["iata"] if len(airports) > 0 else "Unknown",
                                     "destination_icao": airports[1]["icao"] if len(airports) > 1 else "Unknown",
                                     "destination_iata": airports[1]["iata"] if len(airports) > 1 else "Unknown",
-                                    "route_string": self._format_route_string(airports),
+                                    "route_string": self._format_airports_route_string(airports),
                                 }
                                 self._route_cache[cs] = {
                                     "route": route_info,
@@ -569,42 +612,198 @@ class ADSBDataUpdateCoordinator(DataUpdateCoordinator):
                                 type(routes).__name__,
                             )
                     elif response.status == 403:
-                        self._route_403_backoff_until = (
-                            asyncio.get_event_loop().time() + ROUTE_API_403_BACKOFF
+                        self._route_bulk_backoff_until = (
+                            asyncio.get_event_loop().time() + ROUTE_BULK_BACKOFF
                         )
                         _LOGGER.warning(
-                            "Route API returned HTTP 403. Route lookup requires "
-                            "prior approval from dirk@adsb.im and a descriptive "
-                            "User-Agent. Backing off route lookups for %d seconds. "
-                            "Consider disabling flight route lookup in the "
-                            "integration options.",
-                            ROUTE_API_403_BACKOFF,
+                            "adsb.im route API returned HTTP 403. Ensure "
+                            "prior approval from dirk@adsb.im is in place "
+                            "and HTTP is used. Backing off bulk lookups for "
+                            "%d seconds. Falling back to adsbdb single "
+                            "lookups for now.",
+                            ROUTE_BULK_BACKOFF,
                         )
                     else:
                         _LOGGER.warning(
-                            "Route API returned HTTP %d", response.status
+                            "adsb.im route API returned HTTP %d", response.status
                         )
         except asyncio.TimeoutError:
-            _LOGGER.warning("Timeout fetching flight routes")
+            _LOGGER.warning("Timeout fetching bulk flight routes from adsb.im")
         except aiohttp.ClientError as err:
-            _LOGGER.warning("Error fetching flight routes: %s", err)
+            _LOGGER.warning("Error fetching bulk flight routes from adsb.im: %s", err)
         except json.JSONDecodeError as err:
-            _LOGGER.warning("Failed to decode route API response: %s", err)
-        except Exception as err:
-            _LOGGER.warning("Unexpected error fetching routes: %s", err)
+            _LOGGER.warning(
+                "Failed to decode adsb.im route API response: %s", err
+            )
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Unexpected error fetching bulk routes: %s", err)
 
         return results
 
+    async def _lookup_adsbdb_route(
+        self,
+        callsign: str,
+        session: aiohttp.ClientSession,
+        headers: dict[str, str],
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Query adsbdb for a single callsign, respecting rate limits."""
+        now = asyncio.get_event_loop().time()
+
+        # Sliding window cleanup
+        while (
+            self._route_adsbdb_timestamps
+            and self._route_adsbdb_timestamps[0] < now - 300
+        ):
+            self._route_adsbdb_timestamps.popleft()
+
+        count_60 = sum(
+            1
+            for ts in self._route_adsbdb_timestamps
+            if ts >= now - 60
+        )
+        if count_60 >= ROUTE_ADSBDB_LIMIT_60:
+            _LOGGER.debug(
+                "adsbdb 60-second rate limit near threshold, "
+                "skipping lookup for %s",
+                callsign,
+            )
+            return callsign, None
+        if len(self._route_adsbdb_timestamps) >= ROUTE_ADSBDB_LIMIT_300:
+            _LOGGER.debug(
+                "adsbdb 300-second rate limit near threshold, "
+                "skipping lookup for %s",
+                callsign,
+            )
+            return callsign, None
+
+        async with semaphore:
+            url = ROUTE_API_URL.format(callsign=callsign)
+            try:
+                async with asyncio.timeout(DEFAULT_TIMEOUT):
+                    async with session.get(url, headers=headers) as response:
+                        self._route_adsbdb_timestamps.append(
+                            asyncio.get_event_loop().time()
+                        )
+                        if response.status == 429:
+                            retry_after = response.headers.get("Retry-After")
+                            try:
+                                backoff = int(retry_after)  # type: ignore[arg-type]
+                            except (TypeError, ValueError):
+                                backoff = ROUTE_ADSBDB_BLOCKED_BACKOFF
+                            _LOGGER.warning(
+                                "adsbdb rate limit hit (HTTP 429), backing off "
+                                "future single lookups for %d seconds",
+                                backoff,
+                            )
+                            # Shift timestamps so the rolling window looks
+                            # saturated until backoff expires.
+                            until = (
+                                asyncio.get_event_loop().time() + backoff
+                            )
+                            while (
+                                self._route_adsbdb_timestamps
+                                and self._route_adsbdb_timestamps[-1] < until
+                            ):
+                                self._route_adsbdb_timestamps.append(until)
+                            return callsign, None
+                        if response.status != 200:
+                            _LOGGER.warning(
+                                "adsbdb route API returned HTTP %d for %s",
+                                response.status,
+                                callsign,
+                            )
+                            return callsign, None
+                        data = await response.json()
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Timeout fetching route from adsbdb for %s", callsign)
+                return callsign, None
+            except aiohttp.ClientError as err:
+                _LOGGER.warning(
+                    "Error fetching route from adsbdb for %s: %s", callsign, err
+                )
+                return callsign, None
+            except json.JSONDecodeError as err:
+                _LOGGER.warning(
+                    "Failed to decode adsbdb route response for %s: %s",
+                    callsign,
+                    err,
+                )
+                return callsign, None
+
+        response_data = data.get("response") if isinstance(data, dict) else None
+        if not isinstance(response_data, dict):
+            if response_data == "unknown callsign":
+                route_info = self._unknown_route_info()
+                self._route_cache[callsign] = {
+                    "route": route_info,
+                    "expires": now + ROUTE_UNKNOWN_CACHE_TTL,
+                }
+                return callsign, route_info
+            _LOGGER.warning(
+                "Unexpected adsbdb response format for %s: %s",
+                callsign,
+                type(data).__name__,
+            )
+            return callsign, None
+
+        flightroute = response_data.get("flightroute")
+        if not isinstance(flightroute, dict):
+            route_info = self._unknown_route_info()
+            self._route_cache[callsign] = {
+                "route": route_info,
+                "expires": now + ROUTE_UNKNOWN_CACHE_TTL,
+            }
+            return callsign, route_info
+
+        origin = flightroute.get("origin", {})
+        destination = flightroute.get("destination", {})
+        route_info = {
+            "origin_icao": origin.get("icao_code", "Unknown"),
+            "origin_iata": origin.get("iata_code", "Unknown"),
+            "destination_icao": destination.get("icao_code", "Unknown"),
+            "destination_iata": destination.get("iata_code", "Unknown"),
+            "route_string": self._format_airports_route_string(
+                [origin, destination], key_icao="icao_code", key_iata="iata_code"
+            ),
+        }
+        self._route_cache[callsign] = {
+            "route": route_info,
+            "expires": now + ROUTE_CACHE_TTL,
+        }
+        return callsign, route_info
+
+    def _unknown_route_info(self) -> dict[str, Any]:
+        """Return a placeholder route for unknown callsigns."""
+        return {
+            "origin_icao": "Unknown",
+            "origin_iata": "Unknown",
+            "destination_icao": "Unknown",
+            "destination_iata": "Unknown",
+            "route_string": "Unknown",
+        }
+
     def _format_route_string(
-        self, airports: list[dict[str, Any]]
+        self, origin: dict[str, Any], destination: dict[str, Any]
     ) -> str:
-        """Build a human-readable route string from airport list."""
+        """Build a human-readable route string from origin and destination."""
+        return self._format_airports_route_string(
+            [origin, destination], key_icao="icao_code", key_iata="iata_code"
+        )
+
+    def _format_airports_route_string(
+        self,
+        airports: list[dict[str, Any]],
+        key_icao: str = "icao",
+        key_iata: str = "iata",
+    ) -> str:
+        """Build a human-readable route string from a list of airports."""
         if not airports:
             return "Unknown"
         parts = []
         for ap in airports:
-            iata = ap.get("iata", "")
-            icao = ap.get("icao", "")
+            iata = ap.get(key_iata, "")
+            icao = ap.get(key_icao, "")
             parts.append(iata if iata else icao)
         return " - ".join(parts) if len(parts) > 1 else parts[0] if parts else "Unknown"
 
