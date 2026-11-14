@@ -61,10 +61,18 @@ DEFAULT_USER_AGENT = (
     "(+https://github.com/matthewgall/homeassistant-nearbyaircraft)"
 )
 
-# Route API
-ROUTE_API_URL = "http://adsb.im/api/0/routeset"
+# Route API (adsbdb single callsign + adsb.im bulk fallback)
+ROUTE_API_URL = "https://api.adsbdb.com/v0/callsign/{callsign}"
+ROUTE_BULK_API_URL = "http://adsb.im/api/0/routeset"
 ROUTE_CACHE_TTL = 21600  # 6 hours in seconds
-ROUTE_API_403_BACKOFF = 3600  # 1 hour in seconds
+ROUTE_UNKNOWN_CACHE_TTL = 3600  # 1 hour in seconds for unknown callsigns
+ROUTE_MAX_CONCURRENT = 5
+ROUTE_BULK_MIN_INTERVAL = 30  # seconds between adsb.im bulk lookups
+ROUTE_BULK_BACKOFF = 3600  # seconds to back off adsb.im after a 403
+# Stay safely under adsbdb's rate limits (>512/60s => block 60s; >1024/300s => block 300s)
+ROUTE_ADSBDB_LIMIT_60 = 480
+ROUTE_ADSBDB_LIMIT_300 = 1000
+ROUTE_ADSBDB_BLOCKED_BACKOFF = 60  # fallback backoff after a 429
 
 # Retry settings
 MAX_RETRIES = 2
